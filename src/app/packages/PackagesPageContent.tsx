@@ -63,7 +63,7 @@ export default function PackagesPageContent() {
                 onClick={() => alert('Payment notification sent to Frederick. Your sessions will be added within 24 hours.')}
                 className="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
-                I've Made Payment
+                I&apos;ve Made Payment
               </button>
             </div>
 

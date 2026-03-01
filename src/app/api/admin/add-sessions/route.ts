@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing clientId or sessions' }, { status: 400 });
     }
 
-    dbClient.addSessions(clientId, sessions);
+    await dbClient.addSessions(clientId, sessions);
     
     return NextResponse.json({ success: true, message: `Added ${sessions} sessions` });
   } catch (error: any) {

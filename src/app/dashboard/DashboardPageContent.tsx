@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 
 export default function DashboardPageContent() {
   const searchParams = useSearchParams();
@@ -32,7 +33,7 @@ export default function DashboardPageContent() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <p className="text-gray-600 mb-4">Client not found</p>
-          <a href="/" className="text-blue-600 hover:underline">Start over</a>
+          <Link href="/" className="text-blue-600 hover:underline">Start over</Link>
         </div>
       </div>
     );

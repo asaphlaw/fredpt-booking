@@ -24,7 +24,6 @@ export default function AdminDashboard() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ clientId, sessions })
     });
-    // Refresh
     window.location.reload();
   };
 
@@ -34,7 +33,6 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-gray-50 p-8">
       <h1 className="text-3xl font-bold mb-8">Admin Dashboard</h1>
 
-      {/* Stats */}
       <div className="grid grid-cols-4 gap-4 mb-8">
         <div className="bg-white p-6 rounded-lg shadow">
           <p className="text-gray-600">Total Clients</p>
@@ -58,7 +56,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Upcoming Bookings */}
       <div className="bg-white rounded-lg shadow mb-8">
         <h2 className="text-xl font-semibold p-6 border-b">Upcoming Sessions</h2>
         <div className="divide-y">
@@ -82,7 +79,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Clients */}
       <div className="bg-white rounded-lg shadow">
         <h2 className="text-xl font-semibold p-6 border-b">All Clients</h2>
         <div className="divide-y">

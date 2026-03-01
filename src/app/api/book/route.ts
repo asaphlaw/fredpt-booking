@@ -10,12 +10,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    const client = dbClient.getClient(clientId);
+    const client = await dbClient.getClient(clientId);
     if (!client) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 });
     }
 
-    // Check if trial already used
     if (type === 'trial' && client.trial_completed) {
       return NextResponse.json({ 
         error: 'Trial already used. Please purchase a package.',
@@ -23,7 +22,6 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Check credits for regular booking
     if (type === 'regular' && client.sessions_remaining <= 0) {
       return NextResponse.json({ 
         error: 'No sessions remaining. Please purchase a package.',
@@ -31,15 +29,15 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Create booking
-    const booking = dbClient.createBooking(clientId, date, time, type);
+    const booking = await dbClient.createBooking(clientId, date, time, type);
+    const updatedClient = await dbClient.getClient(clientId);
 
     return NextResponse.json({ 
       bookingId: booking.id,
       message: type === 'trial' 
         ? 'Trial session booked! See you soon.' 
-        : `Session booked! You have ${client.sessions_remaining - 1} sessions remaining.`,
-      sessionsRemaining: type === 'regular' ? client.sessions_remaining - 1 : undefined
+        : `Session booked! You have ${updatedClient?.sessions_remaining} sessions remaining.`,
+      sessionsRemaining: type === 'regular' ? updatedClient?.sessions_remaining : undefined
     });
 
   } catch (error: any) {

@@ -6,13 +6,11 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { name, email, phone, age, height, weight, fitness_goals, experience, injuries, preferred_times } = body;
 
-    // Validation
     if (!name || !email || !phone) {
       return NextResponse.json({ error: 'Name, email, and phone are required' }, { status: 400 });
     }
 
-    // Check if email already exists and has used trial
-    const existingClient = dbClient.getClientByEmail(email);
+    const existingClient = await dbClient.getClientByEmail(email);
     if (existingClient) {
       if (existingClient.trial_completed) {
         return NextResponse.json({ 
@@ -21,15 +19,13 @@ export async function POST(req: NextRequest) {
           hasUsedTrial: true
         }, { status: 400 });
       }
-      // Client exists but hasn't completed trial - let them book
       return NextResponse.json({ 
         clientId: existingClient.id,
         message: 'Welcome back! Continue to book your trial.'
       });
     }
 
-    // Create new client
-    const client = dbClient.createClient({
+    const client = await dbClient.createClient({
       name,
       email,
       phone,

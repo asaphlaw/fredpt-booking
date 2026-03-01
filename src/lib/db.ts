@@ -1,50 +1,13 @@
 // src/lib/db.ts
-import Database from 'better-sqlite3';
+import { createClient } from '@libsql/client';
 import { v4 as uuidv4 } from 'uuid';
 
-const db = new Database('./data/fredpt.db');
+const url = process.env.TURSO_DATABASE_URL || 'file:./data/fredpt.db';
+const authToken = process.env.TURSO_AUTH_TOKEN;
 
-// Initialize tables
-db.exec(`
-  CREATE TABLE IF NOT EXISTS clients (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    phone TEXT,
-    age INTEGER,
-    height REAL,
-    weight REAL,
-    fitness_goals TEXT,
-    experience TEXT,
-    injuries TEXT,
-    preferred_times TEXT,
-    trial_completed BOOLEAN DEFAULT 0,
-    sessions_remaining INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+const client = createClient({ url, authToken });
 
-  CREATE TABLE IF NOT EXISTS bookings (
-    id TEXT PRIMARY KEY,
-    client_id TEXT NOT NULL,
-    date TEXT NOT NULL,
-    time TEXT NOT NULL,
-    type TEXT NOT NULL, -- 'trial' or 'regular'
-    status TEXT DEFAULT 'confirmed', -- 'confirmed', 'cancelled', 'completed', 'no-show'
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (client_id) REFERENCES clients(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS packages (
-    id TEXT PRIMARY KEY,
-    client_id TEXT NOT NULL,
-    sessions INTEGER NOT NULL,
-    price_paid REAL NOT NULL,
-    purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (client_id) REFERENCES clients(id)
-  );
-`);
-
-export interface Client {
+export interface ClientData {
   id: string;
   name: string;
   email: string;
@@ -56,7 +19,7 @@ export interface Client {
   experience?: string;
   injuries?: string;
   preferred_times?: string;
-  trial_completed: boolean;
+  trial_completed: number;
   sessions_remaining: number;
   created_at: string;
 }
@@ -71,80 +34,180 @@ export interface Booking {
   created_at: string;
 }
 
+async function initDb() {
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS clients (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      phone TEXT,
+      age INTEGER,
+      height REAL,
+      weight REAL,
+      fitness_goals TEXT,
+      experience TEXT,
+      injuries TEXT,
+      preferred_times TEXT,
+      trial_completed INTEGER DEFAULT 0,
+      sessions_remaining INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS bookings (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      time TEXT NOT NULL,
+      type TEXT NOT NULL,
+      status TEXT DEFAULT 'confirmed',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS packages (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      sessions INTEGER NOT NULL,
+      price_paid REAL NOT NULL,
+      purchased_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+
+initDb().catch(console.error);
+
+function toClientData(row: any): ClientData {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    email: String(row.email),
+    phone: row.phone ? String(row.phone) : undefined,
+    age: row.age ? Number(row.age) : undefined,
+    height: row.height ? Number(row.height) : undefined,
+    weight: row.weight ? Number(row.weight) : undefined,
+    fitness_goals: row.fitness_goals ? String(row.fitness_goals) : undefined,
+    experience: row.experience ? String(row.experience) : undefined,
+    injuries: row.injuries ? String(row.injuries) : undefined,
+    preferred_times: row.preferred_times ? String(row.preferred_times) : undefined,
+    trial_completed: Number(row.trial_completed || 0),
+    sessions_remaining: Number(row.sessions_remaining || 0),
+    created_at: String(row.created_at)
+  };
+}
+
+function toBooking(row: any): Booking {
+  return {
+    id: String(row.id),
+    client_id: String(row.client_id),
+    date: String(row.date),
+    time: String(row.time),
+    type: String(row.type) as 'trial' | 'regular',
+    status: String(row.status) as 'confirmed' | 'cancelled' | 'completed' | 'no-show',
+    created_at: String(row.created_at)
+  };
+}
+
 export const dbClient = {
-  // Create new client from questionnaire
-  createClient: (data: Omit<Client, 'id' | 'created_at' | 'trial_completed' | 'sessions_remaining'>): Client => {
+  createClient: async (data: Omit<ClientData, 'id' | 'created_at' | 'trial_completed' | 'sessions_remaining'>): Promise<ClientData> => {
     const id = uuidv4();
-    const stmt = db.prepare(`
-      INSERT INTO clients (id, name, email, phone, age, height, weight, fitness_goals, experience, injuries, preferred_times)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(id, data.name, data.email, data.phone, data.age, data.height, data.weight, 
-             data.fitness_goals, data.experience, data.injuries, data.preferred_times);
-    return dbClient.getClient(id)!;
+    await client.execute({
+      sql: `INSERT INTO clients (id, name, email, phone, age, height, weight, fitness_goals, experience, injuries, preferred_times)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [id, data.name, data.email, data.phone ?? null, data.age ?? null, data.height ?? null, data.weight ?? null, 
+             data.fitness_goals ?? null, data.experience ?? null, data.injuries ?? null, data.preferred_times ?? null]
+    });
+    const result = await client.execute({
+      sql: 'SELECT * FROM clients WHERE id = ?',
+      args: [id]
+    });
+    return toClientData(result.rows[0]);
   },
 
-  getClient: (id: string): Client | undefined => {
-    return db.prepare('SELECT * FROM clients WHERE id = ?').get(id) as Client | undefined;
+  getClient: async (id: string): Promise<ClientData | undefined> => {
+    const result = await client.execute({
+      sql: 'SELECT * FROM clients WHERE id = ?',
+      args: [id]
+    });
+    return result.rows[0] ? toClientData(result.rows[0]) : undefined;
   },
 
-  getClientByEmail: (email: string): Client | undefined => {
-    return db.prepare('SELECT * FROM clients WHERE email = ?').get(email) as Client | undefined;
+  getClientByEmail: async (email: string): Promise<ClientData | undefined> => {
+    const result = await client.execute({
+      sql: 'SELECT * FROM clients WHERE email = ?',
+      args: [email]
+    });
+    return result.rows[0] ? toClientData(result.rows[0]) : undefined;
   },
 
-  // Check if client has used trial
-  hasUsedTrial: (email: string): boolean => {
-    const client = dbClient.getClientByEmail(email);
-    return client ? client.trial_completed : false;
+  hasUsedTrial: async (email: string): Promise<boolean> => {
+    const c = await dbClient.getClientByEmail(email);
+    return c ? c.trial_completed === 1 : false;
   },
 
-  // Mark trial as completed
-  completeTrial: (clientId: string) => {
-    db.prepare('UPDATE clients SET trial_completed = 1 WHERE id = ?').run(clientId);
+  completeTrial: async (clientId: string) => {
+    await client.execute({
+      sql: 'UPDATE clients SET trial_completed = 1 WHERE id = ?',
+      args: [clientId]
+    });
   },
 
-  // Add sessions (when they buy a package)
-  addSessions: (clientId: string, sessions: number) => {
-    db.prepare('UPDATE clients SET sessions_remaining = sessions_remaining + ? WHERE id = ?')
-      .run(sessions, clientId);
+  addSessions: async (clientId: string, sessions: number) => {
+    await client.execute({
+      sql: 'UPDATE clients SET sessions_remaining = sessions_remaining + ? WHERE id = ?',
+      args: [sessions, clientId]
+    });
   },
 
-  // Deduct session (when they book)
-  useSession: (clientId: string): boolean => {
-    const client = dbClient.getClient(clientId);
-    if (!client || client.sessions_remaining <= 0) return false;
+  useSession: async (clientId: string): Promise<boolean> => {
+    const c = await dbClient.getClient(clientId);
+    if (!c || c.sessions_remaining <= 0) return false;
     
-    db.prepare('UPDATE clients SET sessions_remaining = sessions_remaining - 1 WHERE id = ?')
-      .run(clientId);
+    await client.execute({
+      sql: 'UPDATE clients SET sessions_remaining = sessions_remaining - 1 WHERE id = ?',
+      args: [clientId]
+    });
     return true;
   },
 
-  // Create booking
-  createBooking: (clientId: string, date: string, time: string, type: 'trial' | 'regular'): Booking => {
+  createBooking: async (clientId: string, date: string, time: string, type: 'trial' | 'regular'): Promise<Booking> => {
     const id = uuidv4();
-    db.prepare('INSERT INTO bookings (id, client_id, date, time, type) VALUES (?, ?, ?, ?, ?)')
-      .run(id, clientId, date, time, type);
+    await client.execute({
+      sql: 'INSERT INTO bookings (id, client_id, date, time, type) VALUES (?, ?, ?, ?, ?)',
+      args: [id, clientId, date, time, type]
+    });
     
-    // Deduct session if regular booking
     if (type === 'regular') {
-      dbClient.useSession(clientId);
+      await dbClient.useSession(clientId);
     }
     
-    return dbClient.getBooking(id)!;
+    const result = await client.execute({
+      sql: 'SELECT * FROM bookings WHERE id = ?',
+      args: [id]
+    });
+    return toBooking(result.rows[0]);
   },
 
-  getBooking: (id: string): Booking | undefined => {
-    return db.prepare('SELECT * FROM bookings WHERE id = ?').get(id) as Booking | undefined;
+  getBooking: async (id: string): Promise<Booking | undefined> => {
+    const result = await client.execute({
+      sql: 'SELECT * FROM bookings WHERE id = ?',
+      args: [id]
+    });
+    return result.rows[0] ? toBooking(result.rows[0]) : undefined;
   },
 
-  getClientBookings: (clientId: string): Booking[] => {
-    return db.prepare('SELECT * FROM bookings WHERE client_id = ? ORDER BY date DESC, time DESC')
-      .all(clientId) as Booking[];
+  getClientBookings: async (clientId: string): Promise<Booking[]> => {
+    const result = await client.execute({
+      sql: 'SELECT * FROM bookings WHERE client_id = ? ORDER BY date DESC, time DESC',
+      args: [clientId]
+    });
+    return result.rows.map(toBooking);
   },
 
-  // Cancel booking (with 24h check)
-  cancelBooking: (bookingId: string): { success: boolean; message: string } => {
-    const booking = dbClient.getBooking(bookingId);
+  cancelBooking: async (bookingId: string): Promise<{ success: boolean; message: string }> => {
+    const booking = await dbClient.getBooking(bookingId);
     if (!booking) return { success: false, message: 'Booking not found' };
     
     const bookingDate = new Date(`${booking.date}T${booking.time}`);
@@ -155,37 +218,43 @@ export const dbClient = {
       return { success: false, message: 'Cannot cancel within 24 hours of session' };
     }
     
-    // Refund session if regular booking
     if (booking.type === 'regular') {
-      dbClient.addSessions(booking.client_id, 1);
+      await dbClient.addSessions(booking.client_id, 1);
     }
     
-    db.prepare("UPDATE bookings SET status = 'cancelled' WHERE id = ?").run(bookingId);
+    await client.execute({
+      sql: "UPDATE bookings SET status = 'cancelled' WHERE id = ?",
+      args: [bookingId]
+    });
     return { success: true, message: 'Booking cancelled' };
   },
 
-  // Record package purchase
-  recordPackage: (clientId: string, sessions: number, price: number) => {
+  recordPackage: async (clientId: string, sessions: number, price: number) => {
     const id = uuidv4();
-    db.prepare('INSERT INTO packages (id, client_id, sessions, price_paid) VALUES (?, ?, ?, ?)')
-      .run(id, clientId, sessions, price);
-    dbClient.addSessions(clientId, sessions);
+    await client.execute({
+      sql: 'INSERT INTO packages (id, client_id, sessions, price_paid) VALUES (?, ?, ?, ?)',
+      args: [id, clientId, sessions, price]
+    });
+    await dbClient.addSessions(clientId, sessions);
   },
 
-  // Get all clients (for admin)
-  getAllClients: (): Client[] => {
-    return db.prepare('SELECT * FROM clients ORDER BY created_at DESC').all() as Client[];
+  getAllClients: async (): Promise<ClientData[]> => {
+    const result = await client.execute('SELECT * FROM clients ORDER BY created_at DESC');
+    return result.rows.map(toClientData);
   },
 
-  // Get upcoming bookings (for admin)
-  getUpcomingBookings: (): (Booking & { client_name: string })[] => {
-    return db.prepare(`
+  getUpcomingBookings: async (): Promise<(Booking & { client_name: string })[]> => {
+    const result = await client.execute(`
       SELECT b.*, c.name as client_name 
       FROM bookings b 
       JOIN clients c ON b.client_id = c.id 
       WHERE b.date >= date('now') AND b.status = 'confirmed'
       ORDER BY b.date, b.time
-    `).all() as (Booking & { client_name: string })[];
+    `);
+    return result.rows.map(row => ({
+      ...toBooking(row),
+      client_name: String((row as any).client_name)
+    }));
   }
 };
 

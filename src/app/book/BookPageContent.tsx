@@ -67,7 +67,7 @@ export default function BookPageContent() {
           {isTrial ? (
             <div className="bg-blue-50 p-4 rounded-lg">
               <p className="text-blue-800">
-                Looking forward to meeting you! I'll assess your movement and discuss your goals.
+                Looking forward to meeting you! I&apos;ll assess your movement and discuss your goals.
               </p>
             </div>
           ) : (
